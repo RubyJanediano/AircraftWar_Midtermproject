@@ -349,7 +349,7 @@ class Explosion(pygame.sprite.Sprite):
 def main():
 
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Air Battle")
+    pygame.display.set_caption("AirCraft War")
 
     show_intro_screen(screen)
 
