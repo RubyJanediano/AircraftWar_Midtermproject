@@ -148,34 +148,6 @@ class EnemyBullet(pygame.sprite.Sprite):
             self.kill()
 
 
-class EnemyExplosion(pygame.sprite.Sprite):
-    def __init__(self, center):
-        super().__init__()
-        self.explosion_images = []
-        for i in range(9):
-            img = pygame.image.load(f"explosion/regularExplosion{i}.png").convert_alpha()
-            img = pygame.transform.scale(img, (100, 100))
-            self.explosion_images.append(img)
-        self.image = self.explosion_images[0]
-        self.rect = self.image.get_rect()
-        self.rect.center = center
-        self.frame = 0
-        self.last_update = pygame.time.get_ticks()
-        self.frame_rate = 50
-
-    def update(self):
-        now = pygame.time.get_ticks()
-        if now - self.last_update > self.frame_rate:
-            self.last_update = now
-            self.frame += 1
-            if self.frame == len(self.explosion_images):
-                self.kill()
-            else:
-                center = self.rect.center
-                self.image = self.explosion_images[self.frame]
-                self.rect = self.image.get_rect()
-                self.rect.center = center
-
 
 class Score:
     def __init__(self):
