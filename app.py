@@ -62,6 +62,8 @@ class Player(pygame.sprite.Sprite):
         self.controls = controls
         self.lives = 3
         self.exploded = False
+        self.explosion_sound = pygame.mixer.Sound("sounds/explode.wav")  # Initialize explosion sound
+
 
     def update(self):
         if not self.exploded:
@@ -85,7 +87,8 @@ class Player(pygame.sprite.Sprite):
 
     def explode(self):
         self.exploded = True
-        player_explosion_sound.play()
+        self.explosion_sound.set_volume(0.3)  # Set volume level (0.0 to 1.0)
+        self.explosion_sound.play()
         self.image = pygame.Surface((0, 0))
         self.kill()
 
@@ -147,6 +150,34 @@ class EnemyBullet(pygame.sprite.Sprite):
         if self.rect.bottom < 0 or self.rect.top > HEIGHT:
             self.kill()
 
+
+class Explosion(pygame.sprite.Sprite):
+    def __init__(self, center):
+        super().__init__()
+        self.explosion_images = []
+        for i in range(9):
+            img = pygame.image.load(f"images/explosion{str(i)}.png").convert_alpha()
+            img = pygame.transform.scale(img, (100, 100))
+            self.explosion_images.append(img)
+        self.image = self.explosion_images[0]
+        self.rect = self.image.get_rect()
+        self.rect.center = center
+        self.frame = 0
+        self.last_update = pygame.time.get_ticks()
+        self.frame_rate = 50
+
+    def update(self):
+        now = pygame.time.get_ticks()
+        if now - self.last_update > self.frame_rate:
+            self.last_update = now
+            self.frame += 1
+            if self.frame == len(self.explosion_images):
+                self.kill()
+            else:
+                center = self.rect.center
+                self.image = self.explosion_images[self.frame]
+                self.rect = self.image.get_rect()
+                self.rect.center = center
 
 
 class Score:
@@ -223,6 +254,9 @@ def reset_game():
 
 
 def game_over_screen(screen, scoreboard):
+    game_over_sound.set_volume(0.6)  # Adjust volume level for game over sound
+    game_over_sound.play()
+
     background_image = pygame.image.load("images/gamebg.png").convert()
     background_image = pygame.transform.scale(background_image, (WIDTH, HEIGHT))
 
@@ -240,8 +274,6 @@ def game_over_screen(screen, scoreboard):
     text_rect_quit = text_quit.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 50))
     text_rect_score = text_score.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 100))
     text_rect_high_score = text_high_score.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 150))
-
-    game_over_sound.play()
 
     screen.blit(background_image, (0, 0))
 
@@ -266,11 +298,11 @@ def game_over_screen(screen, scoreboard):
                     return False
 
 
+
 def collide_mask(sprite1, sprite2):
     return pygame.sprite.collide_mask(sprite1, sprite2) is not None
 
 
-# Define images for lives indicators
 player1_life_img = pygame.image.load("images/live_icon.png").convert_alpha()
 player2_life_img = pygame.image.load("images/live_icon.png").convert_alpha()
 
@@ -319,7 +351,7 @@ class Explosion(pygame.sprite.Sprite):
 
 
 def main():
-
+    pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("AirCraft War")
 
@@ -338,6 +370,8 @@ def main():
         enemy = Enemy()
         all_sprites.add(enemy)
         enemies.add(enemy)
+
+    explosions = pygame.sprite.Group()
 
     running = True
     while running:
@@ -370,10 +404,14 @@ def main():
                     player2.shoot()
 
         all_sprites.update()
+        explosions.update()
 
         hits_player1_bullet = pygame.sprite.groupcollide(bullets, enemies, True, True, collide_mask)
         for hit in hits_player1_bullet:
             enemy_hit_sound.play()
+            explosion = Explosion(hit.rect.center)
+            all_sprites.add(explosion)
+            explosions.add(explosion)
             enemy = Enemy()
             all_sprites.add(enemy)
             enemies.add(enemy)
@@ -386,6 +424,7 @@ def main():
                 if player1.lives <= 0:
                     explosion = Explosion(player1.rect.center)
                     all_sprites.add(explosion)
+                    explosions.add(explosion)
                     player1.explode()
 
         if player2.alive and not player2.is_exploded():
@@ -395,20 +434,21 @@ def main():
                 if player2.lives <= 0:
                     explosion = Explosion(player2.rect.center)
                     all_sprites.add(explosion)
+                    explosions.add(explosion)
                     player2.explode()
 
         if player1.lives <= 0 and player2.lives <= 0:
-            if not any(explosion.alive() for explosion in all_sprites if isinstance(explosion, Explosion)):
+            if not any(explosion.alive() for explosion in explosions):
                 running = game_over_screen(screen, scoreboard)
 
+        # Remove screen.fill((0, 0, 0)) to keep the background images
         all_sprites.draw(screen)
-
         draw_lives_indicators(screen, player1, player2)
-
         pygame.display.flip()
 
     pygame.quit()
     sys.exit()
+
 
 
 if __name__ == "__main__":
