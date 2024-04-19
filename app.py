@@ -395,6 +395,8 @@ def main():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
                     player1.shoot()
+                elif event.key == pygame.K_BACKSPACE:
+                    player2.shoot()
                 elif event.key == pygame.K_RETURN:
                     if player1.lives <= 0 and player2.lives <= 0:
                         reset_game()
