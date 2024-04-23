@@ -1,8 +1,7 @@
 import pygame
 import sys
 import random
-
-
+import socket
 
 WIDTH, HEIGHT = 800, 800
 FPS = 60
@@ -49,8 +48,6 @@ def show_intro_screen(screen):
                 return
 
 
-
-
 class Player(pygame.sprite.Sprite):
     def __init__(self, image_path, initial_pos, controls):
         super().__init__()
@@ -62,8 +59,7 @@ class Player(pygame.sprite.Sprite):
         self.controls = controls
         self.lives = 3
         self.exploded = False
-        self.explosion_sound = pygame.mixer.Sound("sounds/explode.wav")  # Initialize explosion sound
-
+        self.explosion_sound = pygame.mixer.Sound("sounds/explode.wav")
 
     def update(self):
         if not self.exploded:
@@ -84,16 +80,28 @@ class Player(pygame.sprite.Sprite):
             all_sprites.add(bullet)
             bullets.add(bullet)
             shoot_sound.play()
+            shoot_sound.set_volume(0.1)
 
     def explode(self):
         self.exploded = True
-        self.explosion_sound.set_volume(0.3)  # Set volume level (0.0 to 1.0)
+        self.explosion_sound.set_volume(0.2)
         self.explosion_sound.play()
         self.image = pygame.Surface((0, 0))
         self.kill()
 
     def is_exploded(self):
         return self.exploded
+
+    def update_movement(self, key):
+        # Handle movement based on the key pressed
+        if key == pygame.K_LEFT:
+            self.rect.x -= self.speed
+        elif key == pygame.K_RIGHT:
+            self.rect.x += self.speed
+        elif key == pygame.K_UP:
+            self.rect.y -= self.speed
+        elif key == pygame.K_DOWN:
+            self.rect.y += self.speed
 
 
 class Enemy(pygame.sprite.Sprite):
@@ -156,7 +164,7 @@ class Explosion(pygame.sprite.Sprite):
         super().__init__()
         self.explosion_images = []
         for i in range(9):
-            img = pygame.image.load(f"images/explosion{str(i)}.png").convert_alpha()
+            img = pygame.image.load(f"explosion/regularExplosion{str(i)}.png").convert_alpha()
             img = pygame.transform.scale(img, (100, 100))
             self.explosion_images.append(img)
         self.image = self.explosion_images[0]
@@ -217,10 +225,9 @@ class Score:
 scoreboard = Score()
 
 player1 = Player("images/player.png", (WIDTH // 2, HEIGHT - 20), [pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_s])
-player2 = Player("images/player2.png", (WIDTH // 2, HEIGHT - 100),
-                 [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN])
-
-all_sprites = pygame.sprite.Group(player1, player2)
+player2 = None
+# Group for all sprites
+all_sprites = pygame.sprite.Group(player1)
 enemies = pygame.sprite.Group()
 bullets = pygame.sprite.Group()
 enemy_bullets = pygame.sprite.Group()
@@ -230,31 +237,9 @@ enemy_hit_sound = pygame.mixer.Sound("sounds/enemyhit.wav")
 game_over_sound = pygame.mixer.Sound("sounds/game_over.wav")
 
 
-def reset_game():
-    global all_sprites, enemies, bullets, enemy_bullets, scoreboard, player1, player2
-
-    scoreboard.reset()
-
-    player1 = Player("images/player.png", (WIDTH // 2, HEIGHT - 20), [pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_s])
-    player2 = Player("images/player2.png", (WIDTH // 2, HEIGHT - 100),
-                     [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN])
-    player1.lives = 3
-    player2.lives = 3
-
-    all_sprites.empty()
-    enemies.empty()
-    bullets.empty()
-    enemy_bullets.empty()
-
-    all_sprites.add(player1, player2)
-    for _ in range(10):
-        enemy = Enemy()
-        all_sprites.add(enemy)
-        enemies.add(enemy)
-
-
-def game_over_screen(screen, scoreboard):
-    game_over_sound.set_volume(0.6)  # Adjust volume level for game over sound
+def game_over_screen(screen, scoreboard, single_player_mode=False, client_connected=False):
+    pygame.mixer.music.stop()
+    game_over_sound.set_volume(0.6)
     game_over_sound.play()
 
     background_image = pygame.image.load("images/gamebg.png").convert()
@@ -287,16 +272,16 @@ def game_over_screen(screen, scoreboard):
 
     while True:
         for event in pygame.event.get():
-            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+            if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_RETURN:
-                    reset_game()
+                    client_connected = reset_game(client_connected, single_player_mode=False)
+                    pygame.mixer.music.play(loops=-1)
                     return True
                 elif event.key == pygame.K_ESCAPE:
                     return False
-
 
 
 def collide_mask(sprite1, sprite2):
@@ -307,55 +292,75 @@ player1_life_img = pygame.image.load("images/live_icon.png").convert_alpha()
 player2_life_img = pygame.image.load("images/live_icon.png").convert_alpha()
 
 
-def draw_lives_indicators(screen, player1, player2):
-    for i in range(player1.lives):
-        x_pos = WIDTH // 10 - 40 * i
-        y_pos = 70
-        screen.blit(player1_life_img, (x_pos, y_pos))
+def draw_lives_indicators(screen, player1, player2=None):
+    x_pos = 10
+    y_pos = 70
 
-    for i in range(player2.lives):
-        x_pos = WIDTH * 9.5 // 10 - 40 * i
-        y_pos = 70
-        screen.blit(player2_life_img, (x_pos, y_pos))
+    for i in range(player1.lives):
+        screen.blit(player1_life_img, (x_pos, y_pos))
+        x_pos += player1_life_img.get_width() + 5
+
+    if player2:
+        x_pos = WIDTH - 10
+        for i in range(player2.lives):
+            x_pos -= player2_life_img.get_width() + 5
+            screen.blit(player2_life_img, (x_pos, y_pos))
 
     scoreboard.draw(screen)
 
 
-class Explosion(pygame.sprite.Sprite):
-    def __init__(self, center):
-        super().__init__()
-        self.explosion_images = []
-        for i in range(9):
-            img = pygame.image.load(f"explosion/regularExplosion{i}.png").convert_alpha()
-            img = pygame.transform.scale(img, (100, 100))
-            self.explosion_images.append(img)
-        self.image = self.explosion_images[0]
-        self.rect = self.image.get_rect()
-        self.rect.center = center
-        self.frame = 0
-        self.last_update = pygame.time.get_ticks()
-        self.frame_rate = 50
+# Reset game function
+def reset_game(client_socket, client_connected=False, single_player_mode=True):
+    global all_sprites, enemies, bullets, enemy_bullets, scoreboard, player1, player2
 
-    def update(self):
-        now = pygame.time.get_ticks()
-        if now - self.last_update > self.frame_rate:
-            self.last_update = now
-            self.frame += 1
-            if self.frame == len(self.explosion_images):
-                self.kill()
-            else:
-                center = self.rect.center
-                self.image = self.explosion_images[self.frame]
-                self.rect = self.image.get_rect()
-                self.rect.center = center
+    scoreboard.reset()
+
+    # Clear all sprite groups
+    all_sprites.empty()
+    enemies.empty()
+    bullets.empty()
+    enemy_bullets.empty()
+
+    # Reset player 1
+    player1 = Player("images/player.png", (WIDTH // 2, HEIGHT - 20),
+                     [pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_s])
+    all_sprites.add(player1)
+    player1.lives = 3
+
+    if not single_player_mode and client_connected:
+        if not player2:
+            player2 = Player("images/player2.png", (2 * WIDTH // 3, HEIGHT - 20),
+                             [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN])
+            all_sprites.add(player2)
+            player2.lives = 3
+
+    # Add enemies
+    for _ in range(10):
+        enemy = Enemy()
+        all_sprites.add(enemy)
+        enemies.add(enemy)
+
+    # Ensure players are alive
+    if player1:
+        player1.exploded = False
+        player1.alive = True
+    if player2:
+        player2.exploded = False
+        player2.alive = True
+
+    return client_connected
 
 
-def main():
+def main(client_connected=False):
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("AirCraft War")
 
     show_intro_screen(screen)
+
+    pygame.mixer.music.load("sounds/bg_music.mp3")
+    pygame.mixer.music.set_volume(0.3)
+    pygame.mixer.music.play(loops=-1)
 
     background_image1 = pygame.image.load("images/bg.png").convert()
     background_image1 = pygame.transform.scale(background_image1, (WIDTH, HEIGHT))
@@ -372,6 +377,13 @@ def main():
         enemies.add(enemy)
 
     explosions = pygame.sprite.Group()
+
+    single_player_mode = not client_connected
+
+    if client_connected:
+        player2 = Player("images/player2.png", (WIDTH // 2, HEIGHT - 100),
+                         [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN])
+        all_sprites.add(player2)
 
     running = True
     while running:
@@ -396,14 +408,17 @@ def main():
                 if event.key == pygame.K_SPACE:
                     player1.shoot()
                 elif event.key == pygame.K_BACKSPACE:
-                    player2.shoot()
-                elif event.key == pygame.K_RETURN:
-                    if player1.lives <= 0 and player2.lives <= 0:
-                        reset_game()
-                        main()
+                    if client_connected and player2:
+                        player2.shoot()
+                elif event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN):
+                    if client_connected and player2:
+                        player2.update_movement(event.key)
+                elif event.key in (pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_s):
+                    player1.update_movement(event.key)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    player2.shoot()
+                    if client_connected:
+                        player2.shoot()
 
         all_sprites.update()
         explosions.update()
@@ -429,29 +444,47 @@ def main():
                     explosions.add(explosion)
                     player1.explode()
 
-        if player2.alive and not player2.is_exploded():
-            player2_hit_by_enemy_bullet = pygame.sprite.spritecollide(player2, enemy_bullets, True, collide_mask)
-            if player2_hit_by_enemy_bullet:
-                player2.lives -= 1
-                if player2.lives <= 0:
-                    explosion = Explosion(player2.rect.center)
-                    all_sprites.add(explosion)
-                    explosions.add(explosion)
-                    player2.explode()
+        if client_connected and player2 is not None:
+            if player2 and player2.alive and not player2.is_exploded():
+                player2_hit_by_enemy_bullet = pygame.sprite.spritecollide(player2, enemy_bullets, True, collide_mask)
+                if player2_hit_by_enemy_bullet:
+                    player2.lives -= 1
+                    if player2.lives <= 0:
+                        explosion = Explosion(player2.rect.center)
+                        all_sprites.add(explosion)
+                        explosions.add(explosion)
+                        player2.explode()
 
-        if player1.lives <= 0 and player2.lives <= 0:
+        if player1.lives <= 0 and (
+                not client_connected or (client_connected and (player2 is not None and player2.lives <= 0))):
             if not any(explosion.alive() for explosion in explosions):
-                running = game_over_screen(screen, scoreboard)
+                if client_connected:
+                    running = game_over_screen(screen, scoreboard, client_connected=True)
+                elif single_player_mode:
+                    running = game_over_screen(screen, scoreboard, single_player_mode=True)
+                else:
+                    running = game_over_screen(screen, scoreboard)
 
-        # Remove screen.fill((0, 0, 0)) to keep the background images
         all_sprites.draw(screen)
-        draw_lives_indicators(screen, player1, player2)
+
+        if single_player_mode:
+            draw_lives_indicators(screen, player1)
+        else:
+            draw_lives_indicators(screen, player1, player2)
+
         pygame.display.flip()
 
     pygame.quit()
     sys.exit()
 
 
-
 if __name__ == "__main__":
-    main()
+    try:
+        server_address = ("127.0.0.1", 9990)
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.connect(server_address)
+        print("Connected to the server.")
+        main(client_connected=True)
+    except ConnectionRefusedError:
+        print("Server is not running. Running game in single-player mode.")
+        main()
